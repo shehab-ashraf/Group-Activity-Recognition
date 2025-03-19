@@ -34,7 +34,8 @@ class Group_Activity_Recognition_Dataset(Dataset):
         split: List[int] = [],
         mode: str = "image_level", 
         only_middle_frame: bool = False,
-        crop: bool = False
+        crop: bool = False,
+        seq: bool = False
     ):
         """
         Args:
@@ -42,10 +43,11 @@ class Group_Activity_Recognition_Dataset(Dataset):
             annot_path (str): Path to the pickle file containing annotations.
             transform (albumentations.Compose, optional): Transformations to apply to the frames.
             labels (dict, optional): A dictionary mapping category names to numeric labels.
-            split (list, optional): A list of clip IDs to include in the dataset.
+            split (list, optional): A list of videos to include in the dataset.
             mode (str): Determines if it's 'image_level' or 'player_level' processing.
             only_middle_frame (bool): If True, only the middle frame of each clip is considered.
             crop (bool): If True, crop the frames based on bounding boxes.
+            seq (bool): If True, return a sequence of frames instead of a single frame.
         """
         self.videos_path = Path(videos_path)
         self.transform = transform
@@ -53,6 +55,8 @@ class Group_Activity_Recognition_Dataset(Dataset):
         self.mode = mode
         self.only_middle_frame = only_middle_frame
         self.crop = crop
+        self.seq = seq
+    
 
         with open(annot_path, "rb") as f:
             video_annotations = pickle.load(f)
@@ -69,6 +73,7 @@ class Group_Activity_Recognition_Dataset(Dataset):
             for clip_id, clip_metadata in video_data.items():
                 frame_boxes = clip_metadata.get("frame_boxes_dct", {})
                 category = clip_metadata.get("category", "")
+                clip_sequence = [] # use this list when working on sequence level
 
                 for frame_id, boxes in frame_boxes.items():
                     frame_path = self.videos_path / str(video) / clip_id / f"{frame_id}.jpg"
@@ -86,13 +91,16 @@ class Group_Activity_Recognition_Dataset(Dataset):
                             })
                     
                     elif self.mode == "image_level":
-                        # Handle image-level (whole frame) logic
-                        bbox_list = [(bbox.box) for bbox in boxes]
-                        dataset.append({
-                            "frame_path": str(frame_path),
-                            "category": category,
-                            "bboxes": bbox_list
-                        })
+                        if self.seq:
+                            clip_sequence.append(str(frame_path))
+                        else :
+                            bbox_list = [(bbox.box) for bbox in boxes]
+                            dataset.append({
+                                "frame_path": str(frame_path),
+                                "category": category,
+                            })
+                if self.mode == 'image_level' and self.seq and len(clip_sequence):
+                    dataset.append((clip_sequence, category))        
         return dataset
 
     def __len__(self) -> int:
@@ -100,20 +108,36 @@ class Group_Activity_Recognition_Dataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]]:
 
-        sample = self.data[idx]
-        frame_path = sample["frame_path"]
-        category = sample["category"]
-        image = cv2.imread(frame_path)
-
         if self.mode == "player_level":
+            sample = self.data[idx]
+            frame_path = sample["frame_path"]
+            category = sample["category"]
+            image = cv2.imread(frame_path)
             x1, y1, x2, y2 = sample["x1"], sample["y1"], sample["x2"], sample["y2"]
             cropped_image = image[y1:y2, x1:x2]
             if self.transform:
                 cropped_image = self.transform(image=cropped_image)["image"]
             return cropped_image, self.labels[category]
         
+
         elif self.mode == "image_level":
-            if self.crop:
+            if self.seq:
+                sample = self.data[idx]
+                sequence = []
+                category = sample[1]
+                for frame in sample[0]:
+                    image = cv2.imread(frame)
+                    if self.transform:
+                        image = self.transform(image=image)["image"]
+                    sequence.append(image)
+                return torch.stack(sequence), self.labels[category]
+
+            elif self.crop:
+                 sample = self.data[idx]
+                 frame_path = sample["frame_path"]
+                 category = sample["category"]
+                 image = cv2.imread(frame_path)
+                 
                  cropped_images = []
                  for bbox in sample["bboxes"]:
                      x1, y1, x2, y2 = bbox
