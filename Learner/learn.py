@@ -1,7 +1,7 @@
 __all__ = ['CancelFitException', 'CancelBatchException', 'CancelEpochException', 
            'Learner', 'run_cbs', 'to_cpu', 'MetricsCB', 'DeviceCB', 'TrainCB', 
            'ProgressCB', 'with_cbs', 'LRFinderCB', 'lr_find', 'Callback', 
-           'BatchSchedCB', 'EpochSchedCB'
+           'BatchSchedCB', 'EpochSchedCB', 'ConfusionMatrixCB'
           ]
 
 
@@ -15,8 +15,10 @@ from torch import optim
 import torch.nn.functional as F
 from fastprogress import progress_bar,master_bar
 from torch.optim.lr_scheduler import ExponentialLR
-from torcheval.metrics import MulticlassAccuracy,Mean
+from torcheval.metrics import MulticlassAccuracy,Mean,MulticlassConfusionMatrix
 from torch.optim import lr_scheduler
+import seaborn as sns
+import numpy as np
 
 class CancelFitException(Exception): pass
 class CancelBatchException(Exception): pass
@@ -112,6 +114,32 @@ class ProgressCB(Callback):
                 self.val_losses.append(learn.metrics.all_metrics['loss'].compute())
                 self.mbar.update_graph([[fc.L.range(self.losses), self.losses],[fc.L.range(learn.epoch+1).map(lambda x: (x+1)*len(learn.dls.train)), self.val_losses]])
 
+
+class ConfusionMatrixCB(Callback):
+    def __init__(self, class_names):
+        self.class_names = class_names
+        self.metric = MulticlassConfusionMatrix(num_classes=len(class_names))
+    
+    def before_epoch(self, learn):
+        if not learn.training:
+            self.metric.reset()
+    
+    def after_batch(self, learn):
+        if not learn.training:
+            preds = to_cpu(learn.preds).argmax(dim=1)
+            targets = to_cpu(learn.batch[1])
+            self.metric.update(preds, targets)
+    
+    def after_epoch(self, learn):
+        if not learn.training:
+            cm = self.metric.compute().numpy()
+            plt.figure(figsize=(6,6))
+            sns.heatmap(cm, annot=True, fmt='.2f', cmap='gray', cbar=False,
+                        xticklabels=self.class_names, yticklabels=self.class_names)
+            plt.xlabel("Predicted Label")
+            plt.ylabel("True Label")
+            plt.title("Confusion Matrix")
+            plt.show()
 
 
 class BaseSchedCB(Callback):
