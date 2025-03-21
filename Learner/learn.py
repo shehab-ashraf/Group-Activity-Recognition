@@ -115,7 +115,7 @@ class ProgressCB(Callback):
                 self.mbar.update_graph([[fc.L.range(self.losses), self.losses],[fc.L.range(learn.epoch+1).map(lambda x: (x+1)*len(learn.dls.train)), self.val_losses]])
 
 
-class ConfusionMatrixCB(Callback):
+class confusionMatrixCB(Callback):
     def __init__(self, class_names):
         self.class_names = class_names
         self.metric = MulticlassConfusionMatrix(num_classes=len(class_names))
