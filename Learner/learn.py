@@ -1,7 +1,7 @@
 __all__ = ['CancelFitException', 'CancelBatchException', 'CancelEpochException', 
            'Learner', 'run_cbs', 'to_cpu', 'MetricsCB', 'DeviceCB', 'TrainCB', 
            'ProgressCB', 'with_cbs', 'LRFinderCB', 'lr_find', 'Callback', 
-           'BatchSchedCB', 'EpochSchedCB', 'ConfusionMatrixCB'
+           'BatchSchedCB', 'EpochSchedCB', 'confusionMatrixCB'
           ]
 
 
