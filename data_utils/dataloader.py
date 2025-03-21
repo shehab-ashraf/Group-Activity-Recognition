@@ -1,154 +1,114 @@
-from torch.utils.data import Dataset
-import cv2
-import torch
-from pathlib import Path
-import pickle
-from typing import List, Dict, Optional, Tuple, Union
-import sys
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from data_utils.dataset import Group_Activity_Recognition_Dataset
+from typing import Dict, List, Optional
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
-class BoxInfo:
-    def __init__(self, line):
-        words = line.split()
-        self.category = words.pop()
-        words = [int(string) for string in words]
-        self.player_ID = words[0]
-        del words[0]
-
-        x1, y1, x2, y2, frame_ID, lost, grouping, generated = words
-        self.box = x1, y1, x2, y2
-        self.frame_ID = frame_ID
-        self.lost = lost
-        self.grouping = grouping
-        self.generated = generated
-sys.modules['boxinfo'] = sys.modules[__name__]
-
-
-class Group_Activity_Recognition_Dataset(Dataset):
-
-    def __init__(
-        self,
-        videos_path: str,
-        annot_path: str,
-        transform  = None,
-        labels: Dict[str, int] = None,
-        split: List[int] = [],
-        mode: str = "image_level", 
-        only_middle_frame: bool = False,
-        crop: bool = False,
-        seq: bool = False
-    ):
-        """
-        Args:
-            videos_path (str): Path to the folder containing the video frames.
-            annot_path (str): Path to the pickle file containing annotations.
-            transform (albumentations.Compose, optional): Transformations to apply to the frames.
-            labels (dict, optional): A dictionary mapping category names to numeric labels.
-            split (list, optional): A list of videos to include in the dataset.
-            mode (str): Determines if it's 'image_level' or 'player_level' processing.
-            only_middle_frame (bool): If True, only the middle frame of each clip is considered.
-            crop (bool): If True, crop the frames based on bounding boxes.
-            seq (bool): If True, return a sequence of frames instead of a single frame.
-        """
-        self.videos_path = Path(videos_path)
-        self.transform = transform
-        self.labels = labels if labels is not None else {}
-        self.mode = mode
-        self.only_middle_frame = only_middle_frame
-        self.crop = crop
-        self.seq = seq
+def create_dataloader(
+    videos_path: str,
+    annot_path: str,
+    labels: Optional[Dict[str, int]] = None,
+    train_split: List[int] = [],
+    valid_split: List[int] = [],
+    mode: str = "image_level",
+    only_middle_frame: bool = False,
+    crop: bool = False,
+    seq: bool = False,
+    batch_size: int = None,
+    num_workers: int = 0,
+):
+    """
+    Creates a DataLoader for the Group Activity Recognition Dataset.
     
+    Args:
+        videos_path (str): Path to the video frames.
+        annot_path (str): Path to the annotation pickle file.
+        labels (dict, optional): Category-to-label mapping.
+        split (list, optional): List of video IDs to include.
+        mode (str): Processing mode ('image_level' or 'player_level').
+        only_middle_frame (bool): Whether to use only the middle frame.
+        crop (bool): Whether to crop frames based on bounding boxes.
+        seq (bool): Whether to return a sequence of frames.
+        batch_size (int): Batch size for the DataLoader.
+        shuffle (bool): Whether to shuffle the dataset.
+        num_workers (int): Number of worker threads for data loading.
+    
+    Returns:
+        DataLoader: A PyTorch DataLoader For The Train And Talid.
+    """
+    train_transforms = A.Compose([
+        A.Resize(224, 224),
 
-        with open(annot_path, "rb") as f:
-            video_annotations = pickle.load(f)
-
-        self.data = self._prepare_dataset(video_annotations, split)
-
-    def _prepare_dataset(
-        self, video_annotations: Dict, split: List[int]
-    ) -> List[Dict[str, Union[str, int, List]]]:
+        A.RandomBrightnessContrast(p=0.9),
         
-        dataset = []
-        for video in split:
-            video_data = video_annotations.get(str(video), {})
-            for clip_id, clip_metadata in video_data.items():
-                frame_boxes = clip_metadata.get("frame_boxes_dct", {})
-                category = clip_metadata.get("category", "")
-                clip_sequence = [] # use this list when working on sequence level
-
-                for frame_id, boxes in frame_boxes.items():
-                    frame_path = self.videos_path / str(video) / clip_id / f"{frame_id}.jpg"
-                    
-                    if not frame_path.exists(): continue
-                    if self.only_middle_frame and str(frame_id) != str(clip_id): continue
-                    
-                    if self.mode == "player_level":
-                        for bbox in boxes:
-                            x1, y1, x2, y2 = bbox.box
-                            dataset.append({
-                                "frame_path": str(frame_path),
-                                "category": bbox.category,
-                                "x1": x1, "x2": x2, "y1": y1, "y2": y2
-                            })
-                    
-                    elif self.mode == "image_level":
-                        if self.seq:
-                            clip_sequence.append(str(frame_path))
-                        else :
-                            bbox_list = [(bbox.box) for bbox in boxes]
-                            dataset.append({
-                                "frame_path": str(frame_path),
-                                "category": category,
-                            })
-                if self.mode == 'image_level' and self.seq and len(clip_sequence):
-                    dataset.append((clip_sequence, category))        
-        return dataset
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]]:
-
-        if self.mode == "player_level":
-            sample = self.data[idx]
-            frame_path = sample["frame_path"]
-            category = sample["category"]
-            image = cv2.imread(frame_path)
-            x1, y1, x2, y2 = sample["x1"], sample["y1"], sample["x2"], sample["y2"]
-            cropped_image = image[y1:y2, x1:x2]
-            if self.transform:
-                cropped_image = self.transform(image=cropped_image)["image"]
-            return cropped_image, self.labels[category]
+        A.OneOf([
+            A.GaussianBlur(blur_limit=(3, 7)),
+            A.ColorJitter(brightness=0.2),
+            A.GaussNoise()
+        ], p=0.2),
         
+        A.OneOf([
+            A.HorizontalFlip(),
+            A.VerticalFlip(),
+        ], p=0.2),
+        
+        A.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        ),
+        
+        ToTensorV2()
+    ])
+    valid_transforms = A.Compose([
+        A.Resize(224, 224),
+        A.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        ),
+        ToTensorV2()
+    ])
+    train_data = Group_Activity_Recognition_Dataset(
+        videos_path=videos_path,
+        annot_path=annot_path,
+        labels=labels,
+        split=train_split,
+        mode=mode,
+        only_middle_frame=only_middle_frame,
+        crop=crop,
+        seq=seq,
+        transform=train_transforms
+    )
+    validation_data = Group_Activity_Recognition_Dataset(
+        videos_path=videos_path,
+        annot_path=annot_path,
+        labels=labels,
+        split=valid_split,
+        mode=mode,
+        only_middle_frame=only_middle_frame,
+        crop=crop,
+        seq=seq,
+        transform=valid_transforms  
+    )
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True
+    )
 
-        elif self.mode == "image_level":
-            if self.seq:
-                sample = self.data[idx]
-                sequence = []
-                category = sample[1]
-                for frame in sample[0]:
-                    image = cv2.imread(frame)
-                    if self.transform:
-                        image = self.transform(image=image)["image"]
-                    sequence.append(image)
-                return torch.stack(sequence), self.labels[category]
+    val_loader = DataLoader(
+        validation_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
 
-            elif self.crop:
-                 sample = self.data[idx]
-                 frame_path = sample["frame_path"]
-                 category = sample["category"]
-                 image = cv2.imread(frame_path)
-                 
-                 cropped_images = []
-                 for bbox in sample["bboxes"]:
-                     x1, y1, x2, y2 = bbox
-                     cropped_image = image[y1:y2, x1:x2]
-                     if self.transform:
-                        cropped_image = self.transform(image=cropped_image)["image"]
-                     cropped_images.append(cropped_image)
-                 while len(cropped_images) != 12:
-                     cropped_image.append(torch.zeros(3, 224, 224))
-                 return torch.stack(cropped_images), self.labels[category]
-            else :
-                if self.transform:
-                    image = self.transform(image=image)["image"]
-                return image, self.labels[category]
+    class DataLoaders():
+        def __init__(self, train_dataloader, test_dataloader):
+            self.train = train_dataloader
+            self.valid = test_dataloader
+    dls = DataLoaders(train_loader, val_loader)
+    
+    return dls
