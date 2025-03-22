@@ -1,41 +1,38 @@
-"""
-
-"""
 import torch
 import torch.nn as nn
 
-class Classifier(nn.Module):
+class GroupActivityClassifier(nn.Module):
     def __init__(self, model):
-        super(Classifier, self).__init__()
+        super(GroupActivityClassifier, self).__init__()
 
+        # Feature Extractor: ResNet50 (excluding last FC layer)
         self.feature_extractor = torch.nn.Sequential(*list(model.resnet50.children())[:-1])
-        self.feature_extractor.requires_grad_(False)
+        self.feature_extractor.requires_grad_(False) 
 
-        self.pool = nn.AdaptiveMaxPool2d((1, 2048))
-        
+        self.bbox_pool = nn.AdaptiveAvgPool1d(1)
 
-        self.fc = nn.Linear(in_features=2048, out_features=1024)
-        self.batch_norm = nn.BatchNorm1d(1024)
-        self.act = nn.ReLU()
-        
-        self.dropout = nn.Dropout(p=0.5)
-        self.fc2 = nn.Linear(in_features=1024, out_features=8)
+        self.classifier = nn.Sequential(
+            nn.Linear(2048, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(512, 8)
+        )
 
     def forward(self, x):
-        batch, bbox, C, H, W = x.size() # Input shape: (batch, bbox, C, H, W) 
-        x = x.view(batch * bbox, C, H, W) # Reshape input to merge batch and bbox dimensions for feature extraction
-        x = self.feature_extractor(x) # Pass through the feature extractor
+        batch, bbox, C, H, W = x.size()
+        x = x.view(batch * bbox, C, H, W)  # Flatten batch & bbox for ResNet
 
-        x = x.view(batch, bbox, -1)
-        x = self.pool(x)
+        x = self.feature_extractor(x)  # Extract features -> (batch * bbox, 2048, 1, 1)
+        x = x.view(batch, bbox, -1)  # Reshape to (batch, bbox, 2048)
 
-        x = x.squeeze(dim=1)  # Shape: (batch, 2048)
-        x = self.fc(x)
-        x = self.batch_norm(x)
-        x = self.act(x)
+        x = self.bbox_pool(x.permute(0, 2, 1))  # (batch, 2048, 1)
+        x = x.squeeze(-1)  # (batch, 2048)
 
-        x = self.dropout(x)
-        x = self.fc2(x)
+        x = self.classifier(x)
 
         return x
-        
