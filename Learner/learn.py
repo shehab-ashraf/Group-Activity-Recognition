@@ -1,7 +1,7 @@
 __all__ = ['CancelFitException', 'CancelBatchException', 'CancelEpochException', 
            'Learner', 'run_cbs', 'to_cpu', 'MetricsCB', 'DeviceCB', 'TrainCB', 
            'ProgressCB', 'with_cbs', 'LRFinderCB', 'lr_find', 'Callback', 
-           'BatchSchedCB', 'EpochSchedCB', 'confusionMatrixCB'
+           'BatchSchedCB', 'EpochSchedCB', 'ConfusionMatrixCB'
           ]
 
 
@@ -115,7 +115,7 @@ class ProgressCB(Callback):
                 self.mbar.update_graph([[fc.L.range(self.losses), self.losses],[fc.L.range(learn.epoch+1).map(lambda x: (x+1)*len(learn.dls.train)), self.val_losses]])
 
 
-class confusionMatrixCB(Callback):
+class ConfusionMatrixCB(Callback):
     def __init__(self, class_names):
         self.class_names = class_names
         self.metric = MulticlassConfusionMatrix(num_classes=len(class_names))
@@ -133,12 +133,16 @@ class confusionMatrixCB(Callback):
     def after_epoch(self, learn):
         if not learn.training:
             cm = self.metric.compute().numpy()
+            row_sums = cm.sum(axis=1, keepdims=True)
+            row_sums[row_sums == 0] = 1
+            cm_percentage = cm / row_sums * 100
+            
             plt.figure(figsize=(6,6))
-            sns.heatmap(cm, annot=True, fmt='.2f', cmap='gray', cbar=False,
+            sns.heatmap(cm_percentage, annot=True, fmt='.1f', cmap='Greys', cbar=False,
                         xticklabels=self.class_names, yticklabels=self.class_names)
             plt.xlabel("Predicted Label")
             plt.ylabel("True Label")
-            plt.title("Confusion Matrix")
+            plt.title("Confusion Matrix (%)")
             plt.show()
 
 
