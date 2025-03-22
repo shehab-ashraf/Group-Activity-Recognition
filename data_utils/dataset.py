@@ -97,6 +97,7 @@ class Group_Activity_Recognition_Dataset(Dataset):
                             dataset.append({
                                 "frame_path": str(frame_path),
                                 "category": category,
+                                "bboxes": bbox_list
                             })
                 if self.mode == 'image_level' and self.seq and clip_sequence:
                     dataset.append({"sequence": clip_sequence, "category": category})       
@@ -118,9 +119,11 @@ class Group_Activity_Recognition_Dataset(Dataset):
         sample = self.data[idx]
 
         if self.mode == "player_level":
-            image = self._load_image(sample["frame_path"])
+            image = cv2.imread(sample["frame_path"])
             x1, y1, x2, y2 = sample["x1"], sample["y1"], sample["x2"], sample["y2"]
             cropped_image = image[y1:y2, x1:x2]
+            if self.transform:
+                cropped_image = self.transform(image=cropped_image)["image"]
             return cropped_image, self.labels.get(sample["category"], -1)
 
         elif self.mode == "image_level":
@@ -128,8 +131,10 @@ class Group_Activity_Recognition_Dataset(Dataset):
                 sequence = [self._load_image(frame) for frame in sample["sequence"]]
                 return torch.stack(sequence), self.labels.get(sample["category"], -1)
             elif self.crop:
-                image = self._load_image(sample["frame_path"])
+                image = cv2.imread(sample["frame_path"])
                 cropped_images = [image[y1:y2, x1:x2] for x1, y1, x2, y2 in sample["bboxes"]]
+                if self.transform:
+                    cropped_images = [self.transform(image=cropped_image)["image"] for cropped_image in cropped_images]
                 cropped_images += [torch.zeros(3, 224, 224)] * (12 - len(cropped_images))
                 return torch.stack(cropped_images), self.labels.get(sample["category"], -1)
             else :
