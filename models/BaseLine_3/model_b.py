@@ -15,7 +15,7 @@ class GroupActivityClassifier(nn.Module):
             nn.BatchNorm1d(1024),
             nn.ReLU(),
             nn.Dropout(p=0.5),
-            nn.Linear(512, 8)
+            nn.Linear(1024, 8)
         )
 
     def forward(self, x):
