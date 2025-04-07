@@ -74,6 +74,7 @@ class Group_Activity_Recognition_Dataset(Dataset):
                 frame_boxes = clip_metadata.get("frame_boxes_dct", {})
                 category = clip_metadata.get("category", "")
                 clip_sequence = []
+                bboxes = []
 
                 for frame_id, boxes in frame_boxes.items():
                     frame_path = self.videos_path / str(video) / clip_id / f"{frame_id}.jpg"
@@ -92,6 +93,7 @@ class Group_Activity_Recognition_Dataset(Dataset):
                     elif self.mode == "image_level":
                         if self.seq:
                             clip_sequence.append(str(frame_path))
+                            bboxes.append(boxes)
                         else :
                             bbox_list = [(bbox.box) for bbox in boxes]
                             dataset.append({
@@ -100,7 +102,7 @@ class Group_Activity_Recognition_Dataset(Dataset):
                                 "bboxes": bbox_list
                             })
                 if self.mode == 'image_level' and self.seq and clip_sequence:
-                    dataset.append({"sequence": clip_sequence, "category": category})       
+                    dataset.append({"sequence": clip_sequence, "category": category, "bboxes": bboxes})       
         return dataset
 
     def __len__(self) -> int:
@@ -112,6 +114,18 @@ class Group_Activity_Recognition_Dataset(Dataset):
         if self.transform:
             image = self.transform(image=image)["image"]
         return image
+    
+
+    def _crop_image(self, image: torch.Tensor, bbox) -> torch.Tensor:
+        cropped_images = []
+        for box in bbox:
+            x1, y1, x2, y2 = box.box
+            cropped_image = image[y1:y2, x1:x2]
+            if self.transform:
+                cropped_image = self.transform(image=cropped_image)["image"]
+            cropped_images.append(cropped_image)
+        cropped_images += [torch.zeros(3, 224, 224)] * (12 - len(cropped_images))
+        return torch.stack(cropped_images)
 
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]]:
@@ -128,8 +142,11 @@ class Group_Activity_Recognition_Dataset(Dataset):
 
         elif self.mode == "image_level":
             if self.seq:
-                sequence = [self._load_image(frame) for frame in sample["sequence"]]
-                return torch.stack(sequence), self.labels.get(sample["category"], -1)
+                if self.crop:
+                    return torch.cat([self._crop_image(cv2.imread(frame), sample['bboxes'][idx]) for idx, frame in enumerate(sample['sequence'])]).contiguous()
+                else:
+                    sequence = [self._load_image(frame) for frame in sample["sequence"]]
+                    return torch.stack(sequence), self.labels.get(sample["category"], -1), sample["bboxes"]
             elif self.crop:
                 image = cv2.imread(sample["frame_path"])
                 cropped_images = [image[y1:y2, x1:x2] for x1, y1, x2, y2 in sample["bboxes"]]
