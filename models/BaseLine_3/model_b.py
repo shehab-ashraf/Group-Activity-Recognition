@@ -8,13 +8,13 @@ class GroupActivityClassifier(nn.Module):
         self.feature_extractor = torch.nn.Sequential(*list(model.resnet50.children())[:-1])
         self.feature_extractor.requires_grad_(False) 
 
-        self.bbox_pool = nn.AdaptiveAvgPool1d(1)
+        self.pool = nn.AdaptiveMaxPool2d((1, 2048))
 
-        self.classifier = nn.Sequential(
+        self.fc = nn.Sequential(
             nn.Linear(2048, 1024),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
-            nn.Dropout(p=0.5),
+            nn.Dropout(0.5),
             nn.Linear(1024, 8)
         )
 
@@ -28,10 +28,10 @@ class GroupActivityClassifier(nn.Module):
         x = x.view(batch, bbox, -1) 
 
         # (batch, bbox, 2048) --> (batch, 2048)
-        x = self.bbox_pool(x.permute(0, 2, 1)) 
-        x = x.squeeze(-1)
+        x = self.pool(x) 
+        x = x.squeeze()
 
         # (batch, 2048) --> (batch, 8)
-        x = self.classifier(x)
+        x = self.fc(x)
 
         return x
