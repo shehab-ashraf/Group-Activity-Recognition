@@ -1,9 +1,10 @@
-from torch.utils.data import Dataset
+from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Tuple, Union
+import pickle
 import cv2
 import torch
-from pathlib import Path
-import pickle
-from typing import List, Dict, Optional, Tuple, Union
+from torch.utils.data import Dataset
 import sys
 
 class BoxInfo:
@@ -20,22 +21,22 @@ class BoxInfo:
         self.lost = lost
         self.grouping = grouping
         self.generated = generated
+
 sys.modules['boxinfo'] = sys.modules[__name__]
 
-
 class Group_Activity_Recognition_Dataset(Dataset):
-
     def __init__(
         self,
         videos_path: str,
         annot_path: str,
-        transform  = None,
+        transform=None,
         labels: Dict[str, int] = None,
         split: List[int] = [],
         mode: str = "image_level", 
         only_middle_frame: bool = False,
         crop: bool = False,
-        seq: bool = False
+        seq: bool = False,
+        target_size: Tuple[int, int] = (224, 224)
     ):
         """
         Args:
@@ -48,111 +49,177 @@ class Group_Activity_Recognition_Dataset(Dataset):
             only_middle_frame (bool): If True, only the middle frame of each clip is considered.
             crop (bool): If True, crop the frames based on bounding boxes.
             seq (bool): If True, return a sequence of frames instead of a single frame.
+            target_size (tuple): Target size for output images (height, width).
         """
         self.videos_path = Path(videos_path)
         self.transform = transform
         self.labels = labels or {}
+        self.split = split
+        self.target_size = target_size
         self.mode = mode
         self.only_middle_frame = only_middle_frame
         self.crop = crop
         self.seq = seq
-    
+
 
         with open(annot_path, "rb") as f:
             video_annotations = pickle.load(f)
 
-        self.data = self._prepare_dataset(video_annotations, split)
+        self.data = self._prepare_data(video_annotations, split)
 
-    def _prepare_dataset(
-        self, video_annotations: Dict, split: List[int]
-    ) -> List[Dict[str, Union[str, int, List]]]:
-        
+    def _prepare_data(self, annotations, split):
         dataset = []
-        for video in split:
-            video_data = video_annotations.get(str(video), {})
-            for clip_id, clip_metadata in video_data.items():
-                frame_boxes = clip_metadata.get("frame_boxes_dct", {})
-                category = clip_metadata.get("category", "")
-                clip_sequence = []
-                bboxes = []
+        for video_id in split:
+            video_data = annotations.get(str(video_id), {})
+            for clip_id, clip_meta in video_data.items():
+                frames_data = clip_meta.get("frame_boxes_dct", {})
+                clip_category = clip_meta.get("category", "")
 
-                for frame_id, boxes in frame_boxes.items():
-                    frame_path = self.videos_path / str(video) / clip_id / f"{frame_id}.jpg"
-                    if not frame_path.exists(): continue
-                    if self.only_middle_frame and str(frame_id) != str(clip_id): continue
-                    
-                    if self.mode == "player_level":
-                        for bbox in boxes:
-                            x1, y1, x2, y2 = bbox.box
-                            dataset.append({
-                                "frame_path": str(frame_path),
-                                "category": bbox.category,
-                                "x1": x1, "x2": x2, "y1": y1, "y2": y2
-                            })
-                    
-                    elif self.mode == "image_level":
-                        if self.seq:
-                            clip_sequence.append(str(frame_path))
-                            bboxes.append(boxes)
-                        else :
-                            bbox_list = [(bbox.box) for bbox in boxes]
-                            dataset.append({
-                                "frame_path": str(frame_path),
-                                "category": category,
-                                "bboxes": bbox_list
-                            })
-                if self.mode == 'image_level' and self.seq and clip_sequence:
-                    dataset.append({"sequence": clip_sequence, "category": category, "bboxes": bboxes})       
+                if self.mode == "player_level":
+                    dataset.extend(self._process_player_level(video_id, clip_id, frames_data))
+                else:
+                    dataset.extend(self._process_image_level(video_id, clip_id, frames_data, clip_category))
         return dataset
 
-    def __len__(self) -> int:
-        return len(self.data)
-    
+    def _process_player_level(self, video_id, clip_id, frames_data):
+        players_data = defaultdict(list)
+        samples = []
 
-    def _load_image(self, path: str) -> torch.Tensor:
-        image = cv2.imread(path)
-        if self.transform:
-            image = self.transform(image=image)["image"]
-        return image
-    
+        for frame_id, boxes in frames_data.items():
+            if not self._should_include_frame(clip_id, frame_id):
+                continue
 
-    def _crop_image(self, image: torch.Tensor, bbox) -> torch.Tensor:
-        cropped_images = []
-        for box in bbox:
-            x1, y1, x2, y2 = box.box
-            cropped_image = image[y1:y2, x1:x2]
-            if self.transform:
-                cropped_image = self.transform(image=cropped_image)["image"]
-            cropped_images.append(cropped_image)
-        cropped_images += [torch.zeros(3, 224, 224)] * (12 - len(cropped_images))
-        return torch.stack(cropped_images)
+            frame_path = self._get_frame_path(video_id, clip_id, frame_id)
+            if not Path(frame_path).exists(): continue
+            
 
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]]:
-
-        sample = self.data[idx]
-
-        if self.mode == "player_level":
-            image = cv2.imread(sample["frame_path"])
-            x1, y1, x2, y2 = sample["x1"], sample["y1"], sample["x2"], sample["y2"]
-            cropped_image = image[y1:y2, x1:x2]
-            if self.transform:
-                cropped_image = self.transform(image=cropped_image)["image"]
-            return cropped_image, self.labels.get(sample["category"], -1)
-
-        elif self.mode == "image_level":
-            if self.seq:
-                if self.crop:
-                    return torch.cat([self._crop_image(cv2.imread(frame), sample['bboxes'][idx]) for idx, frame in enumerate(sample['sequence'])]).contiguous()
+            for bbox in boxes:
+                if self.seq:
+                    players_data[bbox.player_ID].append((frame_path, bbox))
                 else:
-                    sequence = [self._load_image(frame) for frame in sample["sequence"]]
-                    return torch.stack(sequence), self.labels.get(sample["category"], -1), sample["bboxes"]
-            elif self.crop:
-                image = cv2.imread(sample["frame_path"])
-                cropped_images = [image[y1:y2, x1:x2] for x1, y1, x2, y2 in sample["bboxes"]]
-                if self.transform:
-                    cropped_images = [self.transform(image=cropped_image)["image"] for cropped_image in cropped_images]
-                cropped_images += [torch.zeros(3, 224, 224)] * (12 - len(cropped_images))
-                return torch.stack(cropped_images), self.labels.get(sample["category"], -1)
-            else :
-                return self._load_image(sample["frame_path"]), self.labels.get(sample["category"], -1)
+                    samples.append({
+                        'type': 'player',
+                        'frame_path': frame_path,
+                        'box': bbox.box,
+                        'category': bbox.category
+                    })
+
+        if self.seq:
+            for player_id, sequence in players_data.items():
+                samples.append({
+                    'type': 'player_sequence',
+                    'sequence': sequence,
+                    'category': sequence[-1][1].category  # Last frame's label
+                })
+        return samples
+
+    def _process_image_level(self, video_id, clip_id, frames_data, clip_category):
+        samples = []
+        sequence_frames = []
+        sequence_bboxes = []
+
+        for frame_id, boxes in frames_data.items():
+            if not self._should_include_frame(clip_id, frame_id):
+                continue
+
+            frame_path = self._get_frame_path(video_id, clip_id, frame_id)
+            if not Path(frame_path).exists(): continue
+            
+
+            if self.seq:
+                sequence_frames.append(frame_path)
+                sequence_bboxes.append(boxes)
+            else:
+                samples.append({
+                    'type': 'image',
+                    'frame_path': frame_path,
+                    'category': clip_category,
+                    'bboxes': boxes if self.crop else None
+                })
+
+        if self.seq and sequence_frames:
+            samples.append({
+                'type': 'image_sequence',
+                'sequence': sequence_frames,
+                'bboxes': sequence_bboxes if self.crop else None,
+                'category': clip_category
+            })
+        return samples
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data[idx]
+        if sample['type'] == 'player_sequence' or sample['type'] == 'player':
+            return self._load_player_level(sample)
+        else:
+            return self._load_image_level(sample)
+        
+    
+    def _load_image_level(self, sample):
+        if self.seq:
+            if self.crop:
+                # For sequences with cropping
+                sequence = []
+                for frame_path, boxes in zip(sample['sequence'], sample['bboxes']):
+                    frame = self._load_frame(frame_path, apply_transform=False)
+                    crops = (torch.stack([self._crop_frame(frame, bbox.box, apply_transform=True) for bbox in boxes]))
+                    if len(crops) < 12:
+                        crops += [torch.zeros(3, *self.target_size)] * (12 - len(crops))  # Pad sequence
+                    sequence.append(crops)
+                return torch.stack(sequence), self.labels.get(sample['category'], -1)
+            else:
+                # For full-frame sequences
+                frames = [self._load_frame(path, apply_transform=True) 
+                        for path in sample['sequence']]
+                return torch.stack(frames), self.labels.get(sample['category'], -1)
+        else:
+            if self.crop:
+                # Single frame with crops
+                frame = self._load_frame(sample['frame_path'], apply_transform=False)
+                crops = []
+                for bbox in sample['bboxes']:
+                    crops.append(self._crop_frame(frame, bbox.box, apply_transform=True))
+                if len(crops) < 12:
+                    crops += [torch.zeros(3, *self.target_size)] * (12 - len(crops))  # Pad sequence
+                return torch.stack(crops), self.labels.get(sample['category'], -1)
+            else:
+                # Single full frame
+                return self._load_frame(sample['frame_path'], apply_transform=True), self.labels.get(sample['category'], -1)
+
+    def _load_player_level(self, sample):
+        if self.seq:
+            frames = []
+            for frame_path, bbox in sample['sequence']:
+                frame = self._load_frame(frame_path, apply_transform=False)
+                frames.append(self._crop_frame(frame, bbox.box, apply_transform=True))
+            # Pad sequence
+            frames += [torch.zeros(3, *self.target_size)] * (9 - len(frames))
+            return torch.stack(frames[:9]), self.labels.get(sample['category'], -1)
+        else:
+            frame = self._load_frame(sample['frame_path'], apply_transform=False)
+            return self._crop_frame(frame, sample['box'], apply_transform=True), self.labels.get(sample['category'], -1)
+    
+    def _load_frame(self, path, apply_transform=False):
+        img = cv2.imread(str(path))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if apply_transform and self.transform:
+            transformed = self.transform(image=img)
+            return transformed['image']
+        return img
+    
+    def _crop_frame(self, frame, box, apply_transform=True):
+        x1, y1, x2, y2 = box
+        crop = frame[y1:y2, x1:x2]
+        if apply_transform and self.transform:
+            transformed = self.transform(image=crop)
+            crop = transformed['image']
+            return crop
+        return crop
+        
+    def _should_include_frame(self, clip_id, frame_id):
+        return not self.only_middle_frame or str(frame_id) == str(clip_id)
+
+    def _get_frame_path(self, video_id, clip_id, frame_id):
+        return self.videos_path / str(video_id) / str(clip_id) / f"{frame_id}.jpg"
