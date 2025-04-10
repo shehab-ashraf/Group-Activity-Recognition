@@ -164,39 +164,38 @@ class Group_Activity_Recognition_Dataset(Dataset):
                 sequence = []
                 for frame_path, boxes in zip(sample['sequence'], sample['bboxes']):
                     frame = self._load_frame(frame_path, apply_transform=False)
-                    crops = (torch.stack([self._crop_frame(frame, bbox.box, apply_transform=True) for bbox in boxes]))
-                    if len(crops) < 12:
-                        crops += [torch.zeros(3, *self.target_size)] * (12 - len(crops))  # Pad sequence
-                    sequence.append(crops)
-                return torch.stack(sequence), self.labels.get(sample['category'], -1)
+                    players_crops = [self._crop_frame(frame, bbox.box, apply_transform=True) for bbox in boxes]
+                    if len(players_crops) < 12:
+                        players_crops += [torch.zeros(3, *self.target_size)] * (12 - len(players_crops)) # Pad sequence
+                    sequence.append(torch.stack(players_crops))
+                return torch.stack(sequence).contiguous(), self.labels.get(sample['category'], -1)
             else:
                 # For full-frame sequences
-                frames = [self._load_frame(path, apply_transform=True) 
-                        for path in sample['sequence']]
-                return torch.stack(frames), self.labels.get(sample['category'], -1)
+                frames = [self._load_frame(path, apply_transform=True) for path in sample['sequence']]
+                return torch.stack(frames).contiguous(), self.labels.get(sample['category'], -1)
         else:
             if self.crop:
                 # Single frame with crops
                 frame = self._load_frame(sample['frame_path'], apply_transform=False)
-                crops = []
+                players_crops = []
                 for bbox in sample['bboxes']:
-                    crops.append(self._crop_frame(frame, bbox.box, apply_transform=True))
-                if len(crops) < 12:
-                    crops += [torch.zeros(3, *self.target_size)] * (12 - len(crops))  # Pad sequence
-                return torch.stack(crops), self.labels.get(sample['category'], -1)
+                    players_crops.append(self._crop_frame(frame, bbox.box, apply_transform=True))
+                if len(players_crops) < 12:
+                    players_crops += [torch.zeros(3, *self.target_size)] * (12 - len(players_crops))  # Pad sequence
+                return torch.stack(players_crops).contiguous(), self.labels.get(sample['category'], -1)
             else:
                 # Single full frame
                 return self._load_frame(sample['frame_path'], apply_transform=True), self.labels.get(sample['category'], -1)
 
     def _load_player_level(self, sample):
         if self.seq:
-            frames = []
+            player_crops = []
             for frame_path, bbox in sample['sequence']:
                 frame = self._load_frame(frame_path, apply_transform=False)
-                frames.append(self._crop_frame(frame, bbox.box, apply_transform=True))
-            # Pad sequence
-            frames += [torch.zeros(3, *self.target_size)] * (9 - len(frames))
-            return torch.stack(frames[:9]), self.labels.get(sample['category'], -1)
+                player_crops.append(self._crop_frame(frame, bbox.box, apply_transform=True))
+            if len(player_crops) < 9:
+                player_crops += [torch.zeros(3, *self.target_size)] * (9 - len(player_crops))
+            return torch.stack(player_crops).contiguous(), self.labels.get(sample['category'], -1)
         else:
             frame = self._load_frame(sample['frame_path'], apply_transform=False)
             return self._crop_frame(frame, sample['box'], apply_transform=True), self.labels.get(sample['category'], -1)
