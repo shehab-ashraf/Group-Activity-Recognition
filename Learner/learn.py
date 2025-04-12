@@ -45,7 +45,7 @@ class OptimizerCB(Callback):
     def __init__(self, opt_func=partial(optim.SGD, momentum=0.9)):
         self.opt_func = opt_func
     def before_fit(self, learn):
-        learn.opt = self.opt_func(learn.model.parameters())
+        learn.opt = self.opt_func(learn.model.parameters(), learn.lr)
 
 class DeviceCB(Callback):
     order = OptimizerCB.order + 1
@@ -195,7 +195,7 @@ class with_cbs:
 
 
 class Learner():
-    def __init__(self, model, dls=(0,), loss_func=F.mse_loss, lr=0.1, cbs=None):
+    def __init__(self, model, dls=(0,), loss_func=F.mse_loss, lr=0.0001, cbs=None):
         cbs = fc.L(cbs)
         fc.store_attr()
 
@@ -233,7 +233,7 @@ class Learner():
         try:
             self.n_epochs = n_epochs
             self.epochs = range(n_epochs)
-            if lr is None: lr = self.lr
+            if lr is not None: self.lr = lr
             self._fit(train, valid)
         finally:
             for cb in cbs: self.cbs.remove(cb)
