@@ -1,7 +1,8 @@
 __all__ = ['CancelFitException', 'CancelBatchException', 'CancelEpochException', 
            'Learner', 'run_cbs', 'to_cpu', 'MetricsCB', 'DeviceCB', 'TrainCB', 
            'ProgressCB', 'with_cbs', 'LRFinderCB', 'lr_find', 'Callback', 
-           'BatchSchedCB', 'EpochSchedCB', 'ConfusionMatrixCB', 'OptimizerCB' 
+           'BatchSchedCB', 'EpochSchedCB', 'ConfusionMatrixCB', 'OptimizerCB',
+           'MixedPrecisionCB'
           ]
 
 
@@ -62,6 +63,21 @@ class TrainCB(Callback):
     def backward(self, learn): learn.loss.backward()
     def step(self, learn): learn.opt.step()
     def zero_grad(self, learn): learn.opt.zero_grad()
+
+class MixedPrecisionCB(TrainCB):
+    order = DeviceCB.order + 1
+    def before_fit(self, learn):
+        self.scaler = torch.amp.GradScaler(device="cuda")
+    def before_batch(self, learn):
+        self.autocast = torch.autocast("cuda", dtype=torch.float16)
+        self.autocast.__enter__()
+    def after_loss(self, learn):
+        self.autocast.__exit__(None, None, None)
+    def backward(self, learn):
+        self.scaler.scale(learn.loss).backward()
+    def step(self, learn):
+        self.scaler.step(learn.opt)
+        self.scaler.update()
 
 class MetricsCB(Callback):
     order = TrainCB.order + 1
