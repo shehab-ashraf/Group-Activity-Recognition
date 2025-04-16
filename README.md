@@ -36,7 +36,7 @@ The model is organized into two primary stages:
   For every detected and tracked individual, a bounding box is cropped from each frame.
   
 - **Feature Extraction:**  
-  A pre-trained CNN (e.g., AlexNet) extracts high-level features (e.g., from the fc7 layer) from each cropped image.
+  A pre-trained CNN extracts high-level features from each cropped image.
 
 #### Temporal Dynamics with LSTM
 - **Feeding Features into LSTM:**  
