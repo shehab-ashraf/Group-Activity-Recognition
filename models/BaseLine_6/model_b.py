@@ -8,6 +8,8 @@ class Group_Activity_Classifier(nn.Module):
 
         self.feature_extraction = nn.Sequential(*list(Person_Activity_Model.resnet50.children())[:-1])
 
+        self.pool = nn.AdaptiveMaxPool2d((1, 2048))
+
         self.lstm = nn.LSTM(
             input_size=2048, 
             hidden_size=hidden_size, 
@@ -17,7 +19,7 @@ class Group_Activity_Classifier(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(hidden_size, 256),
             nn.BatchNorm1d(256),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(0.3),
 
             nn.Linear(256, num_classes)
@@ -33,7 +35,7 @@ class Group_Activity_Classifier(nn.Module):
         # (batch*seq*num_players, 2048) --> (batch_size, seq, num_players, 2048)
         x = x.view(batch, seq, num_players, -1)
         # (batch, seq, num_players, 2048) --> (batch_size, seq, 2048)
-        x = torch.max(x, dim=2)[0]
+        x = self.pool(x)
         # (batch, seq, 2048) --> (batch, seq, hidden_size)
         x, _ = self.lstm(x)
         # (batch, seq, hidden_size) --> (batch, hidden_size)
