@@ -36,6 +36,7 @@ class Group_Activity_Classifier(nn.Module):
         x = x.view(batch, seq, num_players, -1)
         # (batch, seq, num_players, 2048) --> (batch_size, seq, 2048)
         x = self.pool(x)
+        x = x.squeeze(-2)
         # (batch, seq, 2048) --> (batch, seq, hidden_size)
         x, _ = self.lstm(x)
         # (batch, seq, hidden_size) --> (batch, hidden_size)
