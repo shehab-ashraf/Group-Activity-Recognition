@@ -17,12 +17,12 @@ class Player_Activity_Classifier(nn.Module):
         )
         
         self.fc = nn.Sequential(
-            nn.Linear(lstm_hidden_size+2048, lstm_hidden_size),
-            nn.LayerNorm(lstm_hidden_size),
-            nn.GELU(),
+            nn.Linear(lstm_hidden_size, 265),
+            nn.LayerNorm(256),
+            nn.ReLU(),
             nn.Dropout(0.3),
             
-            nn.Linear(lstm_hidden_size, num_classes)
+            nn.Linear(256, num_classes)
         )
     
     
@@ -31,14 +31,13 @@ class Player_Activity_Classifier(nn.Module):
         batch, seq, C, H, W = x.size()
         # (batch, seq, C, H, W) --> (batch*seq, C, H, W)
         x = x.view(-1, C, H, W)
-        # (batch*seq, C, H, W) --> (batch, seq, 2048+lstm_hidden_size)
-        x1 = self.resnet(x) # (batch*seq, 2048)
-        x1 = x1.view(batch, seq, -1) # (batch, seq, 2048)
-        x2, _ = self.lstm(x1) # (batch, seq, lstm_hidden_size)
-        x = torch.cat([x1, x2], dim=-1)
-        # (batch, seq, 2048+lstm_hidden_size) --> (batch, 2048+lstm_hidden_size)
+        # (batch*seq, C, H, W) --> (batch, seq, lstm_hidden_size)
+        x = self.resnet(x) # (batch*seq, 2048)
+        x = x.view(batch, seq, -1) # (batch, seq, 2048)
+        x, _ = self.lstm(x) # (batch, seq, lstm_hidden_size)
+        # (batch, seq, lstm_hidden_size) --> (batch, lstm_hidden_size)
         x = x[:, -1, :]
-        # (batch, 2048+lstm_hidden_size) --> (batch, num_classes)
+        # (batch, lstm_hidden_size) --> (batch, num_classes)
         x = self.fc(x)
         return x
 
