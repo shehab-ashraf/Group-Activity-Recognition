@@ -10,11 +10,13 @@ class Group_Activity_Classifier(nn.Module):
 
         for param in Player_Activity_Model.parameters():
             param.requires_grad = False
+
+        self.pool = nn.AdaptiveMaxPool2d((1, 2048))
         
         self.fc = nn.Sequential(
-            nn.Linear(2048+512, 512),
+            nn.Linear(2048, 512),
             nn.BatchNorm1d(512),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(0.3),
         
             nn.Linear(512, num_classes)
@@ -34,10 +36,11 @@ class Group_Activity_Classifier(nn.Module):
         x = x.contiguous()
         # (batch*num_players, seq, 2048+512) --> (batch, seq, num_players, 2048+512)
         x = x.view(batch, seq, num_players, -1)
-        # (batch, seq, num_players, 2048+512) --> # (batch, seq, 2048+512)
-        x = torch.max(x, dim=2)[0]
-        # (batch, seq, 2048+512) --> (batch, 2048+512)
+        # (batch, seq, num_players, 2048) --> # (batch, seq, 2048)
+        x = self.pool(x)
+        x = x.squeeze(-2)
+        # (batch, seq, 2048) --> (batch, 2048)
         x = x[:, -1, :]
-        # (batch, 2048+512) --> (batch, num_classes)
+        # (batch, 2048) --> (batch, num_classes)
         x = self.fc(x)
         return x
