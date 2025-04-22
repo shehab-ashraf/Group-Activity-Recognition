@@ -115,7 +115,7 @@ The model is organized into two primary stages:
 | Baseline 3   | 77.1%        |
 | Baseline 4   | In Progress  |
 | Baseline 5   | In Progress  |
-| Baseline 6   | In Progress  |
+| Baseline 6   | 83.0%  |
 | Baseline 7   | In Progress  |
 | Baseline 8   | In Progress  |
 | Baseline 9   | In Progress  |
