@@ -18,7 +18,7 @@ class Player_Activity_Classifier(nn.Module):
         
         self.fc = nn.Sequential(
             nn.Linear(lstm_hidden_size, 256),
-            nn.BatchNorm1d(256),
+            nn.LayerNorm(256),
             nn.ReLU(),
             nn.Dropout(0.3),
             
