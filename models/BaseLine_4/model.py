@@ -1,45 +1,40 @@
-"""
-This BaseLine is a temporal extension of the first BaseLine. It examines the idea of feeding
-image level features directly to an LSTM model to recognize the group activity. In this baseline, the 
-resnet50 model is deployed on the whole image and resulting AvgPool features are fed to an LSTM model.
-"""
-
-import torch
 import torch.nn as nn
 import torchvision.models as models
 
-class ResNetLSTM(nn.Module):
-    def __init__(self, hidden_dim=512, num_layers=1, num_classes=None):
-        super(ResNetLSTM, self).__init__()
+class Group_Activity_Classifier(nn.Module):
+    def __init__(self, hidden_dim=512, num_layers=1, num_classes=8):
+        super(Group_Activity_Classifier, self).__init__()
 
-        self.resnet = models.resnet50(pretrained=True)
-        self.resnet_feature_extractor = nn.Sequential(*list(self.resnet.children())[:-1])  
-    
+        self.resnet50 = nn.Sequential(*list(self.models.resnet50(weights=models.ResNet50_Weights.DEFAULT).children())[:-1])  
         self.lstm = nn.LSTM(input_size=2048, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
         
-        self.fc_layers = nn.Sequential(
+        self.fc = nn.Sequential(
             nn.Linear(hidden_dim, 256),
-            nn.BatchNorm1d(256),
+            nn.LayerNorm(256),
             nn.ReLU(),
             nn.Dropout(0.3), 
 
             nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
+            nn.LayerNorm(128),
             nn.ReLU(),
-            nn.Dropout(0.7),
+            nn.Dropout(0.3),
 
             nn.Linear(128, num_classes)  
         )
 
     def forward(self, x):
-        batch_size, seq_len, c, h, w = x.shape
-        x = x.view(batch_size * seq_len, c, h, w)  
-        features = self.resnet_feature_extractor(x) 
-        features = features.view(batch_size, seq_len, -1) 
-
-        lstm_out, _ = self.lstm(features) 
-        x = lstm_out[:, -1, :]  
-    
-        output = self.fc_layers(x) 
-        
-        return output
+        # Input_Shape: (Batch_Size, 9, 3, 224, 224)
+        batch, seq, c, h, w = x.shape
+        # (batch, seq, c, h, w) --> (batch*seq, c, h, w)
+        x = x.view(batch * seq, c, h, w)  
+        # (batch*seq, c, h, w) --> (batch*seq, 2048)
+        x = self.resnet50(x)
+        # (batch*seq, 2048) --> (batch, seq, 2048)
+        x = x.view(batch, seq, -1)
+        # (batch, seq, 2048) --> (batch, seq, hidden_dim)
+        x, _ = self.lstm(x)
+        # (batch, seq, hidden_dim) --> (batch, hidden_dim)
+        x = x[:, -1, :]
+        # (batch, hidden_dim) --> (batch, num_classes)
+        x = self.fc(x)
+        return x
