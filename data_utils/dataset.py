@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 import pickle
 import cv2
 import torch
@@ -164,7 +164,8 @@ class Group_Activity_Recognition_Dataset(Dataset):
                 sequence = []
                 for frame_path, boxes in zip(sample['sequence'], sample['bboxes']):
                     frame = self._load_frame(frame_path, apply_transform=False)
-                    players_crops = [self._crop_frame(frame, bbox.box, apply_transform=True) for bbox in boxes]
+                    sorted_boxes = sorted(boxes, key=lambda b: b.box[0])
+                    players_crops = [self._crop_frame(frame, bbox.box, apply_transform=True) for bbox in sorted_boxes]
                     if len(players_crops) < 12:
                         players_crops += [torch.zeros(3, *self.target_size)] * (12 - len(players_crops)) # Pad sequence
                     sequence.append(torch.stack(players_crops))
@@ -178,7 +179,8 @@ class Group_Activity_Recognition_Dataset(Dataset):
                 # Single frame with crops
                 frame = self._load_frame(sample['frame_path'], apply_transform=False)
                 players_crops = []
-                for bbox in sample['bboxes']:
+                sorted_boxes = sorted(sample['bboxes'], key=lambda b: b.box[0])
+                for bbox in sorted_boxes:
                     players_crops.append(self._crop_frame(frame, bbox.box, apply_transform=True))
                 if len(players_crops) < 12:
                     players_crops += [torch.zeros(3, *self.target_size)] * (12 - len(players_crops))  # Pad sequence
