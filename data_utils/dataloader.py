@@ -40,36 +40,20 @@ def create_dataloader(
     if train_transforms is None:
         train_transforms = A.Compose([
             A.Resize(224, 224),
-
-            A.RandomBrightnessContrast(p=0.9),
-            
-            A.OneOf([
-                A.GaussianBlur(blur_limit=(3, 7)),
-                A.ColorJitter(brightness=0.2),
-                A.GaussNoise()
-            ], p=0.2),
-            
-            A.OneOf([
-                A.HorizontalFlip(),
-                A.VerticalFlip(),
-            ], p=0.2),
-            
-            A.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
-            ),
-            
-            ToTensorV2()
-        ])
-    if valid_transforms is None:
-        valid_transforms = A.Compose([
-            A.Resize(224, 224),
             A.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             ),
             ToTensorV2()
         ])
+    valid_transforms = A.Compose([
+        A.Resize(224, 224),
+        A.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        ),
+        ToTensorV2()
+    ])
     train_data = Group_Activity_Recognition_Dataset(
         videos_path=videos_path,
         annot_path=annot_path,
