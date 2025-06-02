@@ -9,9 +9,7 @@ class Group_Activity_Classifier(nn.Module):
 
         for param in self.resnet50.parameters():
             param.requires_grad = False
-        
-        self.feature_extraction.requires_grad_(False)
-
+            
         self.pool = nn.AdaptiveMaxPool2d((1, 2048))
 
         self.fc = nn.Sequential(
@@ -27,7 +25,7 @@ class Group_Activity_Classifier(nn.Module):
         batch, bbox, C, H, W = x.size()
         x = x.view(batch * bbox, C, H, W)
         # (batch * bbox, C, H, W) --> (batch, bbox, 2048)
-        x = self.feature_extraction(x)
+        x = self.resnet50(x)
         x = x.view(batch, bbox, -1)
         # (batch, bbox, 2048) --> (batch, 2048)
         x = self.pool(x) 
