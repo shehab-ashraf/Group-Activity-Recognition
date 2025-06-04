@@ -84,7 +84,8 @@ def create_dataloader(
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=True
+            pin_memory=True,
+            drop_last=True
         )
     if len(valid_split) == 0:
         val_loader = None   
@@ -94,6 +95,8 @@ def create_dataloader(
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
+            pin_memory=True,
+            drop_last=True
         )
     class DataLoaders():
         def __init__(self, train_dataloader, test_dataloader):
