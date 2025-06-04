@@ -5,7 +5,7 @@ class Group_Activity_Classifier(nn.Module):
     def __init__(self, hidden_dim=512, num_layers=1, num_classes=8):
         super(Group_Activity_Classifier, self).__init__()
 
-        self.resnet50 = nn.Sequential(*list(self.models.resnet50(weights=models.ResNet50_Weights.DEFAULT).children())[:-1])  
+        self.resnet50 = nn.Sequential(*list(models.resnet50(weights=models.ResNet50_Weights.DEFAULT).children())[:-1])  
         self.lstm = nn.LSTM(input_size=2048, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True)
         
         self.fc = nn.Sequential(
