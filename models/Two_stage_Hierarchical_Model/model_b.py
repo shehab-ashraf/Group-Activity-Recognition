@@ -54,7 +54,7 @@ class Group_Activity_Classifier(nn.Module):
         x1 = x.view(batch, seq, num_players, -1) # (batch, seq, num_players, 2048)
         x2 = x1.permute(0, 2, 1, 3).contiguous() # (batch, num_players, seq, 2048)
         x2 = x2.view(-1, seq, 2048) # (batch*num_players, seq, 2048)
-        x2, _ = self.Player_lstm(x2)
+        x2, _ = self.player_lstm(x2)
         x2 = x2.view(batch, num_players, seq, -1) # (batch, num_players, seq, 512)
         x2 = x2.permute(0, 2, 1, 3).contiguous() # (batch, seq, num_players, 512)
         x = torch.cat([x1, x2], dim=-1) # (batch, seq, num_players, 2048+512)
@@ -69,7 +69,7 @@ class Group_Activity_Classifier(nn.Module):
         x = torch.cat([left_team, right_team], dim=-1) # (batch, seq, 2048)
 
         # (batch, seq, 2048) --> (batch, seq, 512)
-        x, _ = self.Group_lstm(x)
+        x, _ = self.group_lstm(x)
         # (batch, seq,  512) --> (batch, 512)
         x = x[:, -1, :]
         # (batch, 512) --> (batch, num_classes)
